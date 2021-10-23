@@ -1,0 +1,17 @@
+{
+  "name": "layout-grid-measurement",
+  "version": "0.0.0",
+  "description": "Measure layout columns, gutters and responsive constraints from rendered pages.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edilec/layout-grid-measurement"
+  }
+}
