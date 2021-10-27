@@ -32,6 +32,7 @@ export const DEFAULT_LIMITS = Object.freeze({
   maxBoxes: 20000,
   maxMeasurementBytes: 8000000,
   maxRoutes: 500,
+  maxWidths: 4000,
 })
 
 export const LIMIT_NAMES = Object.freeze(Object.keys(DEFAULT_LIMITS).sort(byCodeUnit))

@@ -236,6 +236,7 @@ export function compareLayout({ measurements, contract, file, now = Date.now() }
 
   const over = [
     ['route-limit-exceeded', routeCount, contract.limits.maxRoutes, 'routes', 'maxRoutes'],
+    ['width-limit-exceeded', widthCount, contract.limits.maxWidths, 'widths', 'maxWidths'],
     ['box-limit-exceeded', boxCount, contract.limits.maxBoxes, 'boxes', 'maxBoxes'],
   ].find(([, seen, limit]) => seen > limit)
   if (over !== undefined) {
