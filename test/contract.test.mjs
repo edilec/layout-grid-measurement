@@ -115,8 +115,8 @@ test('the contract is bounded', () => {
 })
 
 test('a name that renders as nothing is refused', () => {
-  refuses((d) => { d.unit = '   '; return d }, /unit must be a name that is visible/u)
-  refuses((d) => { d.widths[0].name = ''; return d }, /name must be a name that is visible/u)
+  refuses((d) => { d.unit = '   '; return d }, /unit must be a name at most 128 characters long that holds at least one visible character/u)
+  refuses((d) => { d.widths[0].name = ''; return d }, /name must be a name at most 128 characters long that holds at least one visible character/u)
 })
 
 test('a contract that cannot be read or parsed leaves stdout empty', async () => {

@@ -13,9 +13,21 @@
  */
 
 import { isRecord } from './contract.mjs'
-import { at, isRenderableString, makeFinding, msg, pointerToken, sanitize } from './rules.mjs'
+import { MAX_ID_LENGTH, at, isRenderableString, makeFinding, msg, num, pointerToken, sanitize } from './rules.mjs'
 
 export const MEASUREMENTS_SCHEMA_VERSION = '1'
+
+/**
+ * Why `isRenderableString` refused a name, in words the report may use.
+ *
+ * These sentences used to say the name must be "visible once rendered", which
+ * names the report's own rendering -- but `render` is one of the words this
+ * tool may not use about itself, so `msg` threw and a document with an unnamed
+ * route aborted the run with empty stdout, the shape reserved for a
+ * configuration error. The wording says what the check does instead.
+ */
+const NAME_REQUIREMENT = (field) =>
+  `${field} must be at most ${MAX_ID_LENGTH} characters long and hold at least one visible character`
 
 const DOCUMENT_KEYS = Object.freeze(['schemaVersion', 'capture', 'routes'])
 const META_KEYS = Object.freeze(['id', 'unit', 'capturedAt'])
@@ -81,7 +93,7 @@ export function readBox(raw) {
   const unknown = keyProblem(raw, BOX_KEYS, 'the box')
   if (unknown !== null) return { ok: false, reason: unknown }
   if (!isRenderableString(raw.element)) {
-    return { ok: false, reason: 'element must be a name that is visible once rendered' }
+    return { ok: false, reason: NAME_REQUIREMENT('element') }
   }
   const element = raw.element
   for (const key of ['x', 'y']) {
@@ -135,7 +147,11 @@ export function readMeasurements(document, file) {
   const metaKeys = keyProblem(document.capture, META_KEYS, 'capture')
   if (metaKeys !== null) return invalid(msg`${metaKeys}.`, '/capture', `Known keys: ${META_KEYS.join(', ')}.`)
   if (!isRenderableString(document.capture.id)) {
-    return invalid(msg`capture.id must be a name that is visible once rendered.`, '/capture/id', 'Name the capture.')
+    return invalid(
+      msg`capture.id must be at most ${num(MAX_ID_LENGTH)} characters long and hold at least one visible character.`,
+      '/capture/id',
+      'Name the capture.',
+    )
   }
   if (!isRenderableString(document.capture.unit)) {
     return invalid(msg`capture.unit must name the unit every coordinate is in.`, '/capture/unit', 'Declare the unit.')
@@ -153,7 +169,11 @@ export function readMeasurements(document, file) {
     const routeKeys = keyProblem(rawRoute, ROUTE_KEYS, 'a route')
     if (routeKeys !== null) return invalid(msg`${routeKeys}.`, routeLabel, `Known keys: ${ROUTE_KEYS.join(', ')}.`)
     if (!isRenderableString(rawRoute.name)) {
-      return invalid(msg`A route name must be visible once rendered.`, routeLabel, 'Name the route.')
+      return invalid(
+        msg`A route name must be at most ${num(MAX_ID_LENGTH)} characters long and hold at least one visible character.`,
+        routeLabel,
+        'Name the route.',
+      )
     }
     if (seenRoutes.has(rawRoute.name)) {
       return invalid(
@@ -175,7 +195,11 @@ export function readMeasurements(document, file) {
       const widthKeys = keyProblem(rawWidth, WIDTH_KEYS, 'a width')
       if (widthKeys !== null) return invalid(msg`${widthKeys}.`, widthLabel, `Known keys: ${WIDTH_KEYS.join(', ')}.`)
       if (!isRenderableString(rawWidth.name)) {
-        return invalid(msg`A width must name itself.`, widthLabel, 'Name the width.')
+        return invalid(
+          msg`A width name must be at most ${num(MAX_ID_LENGTH)} characters long and hold at least one visible character.`,
+          widthLabel,
+          'Name the width.',
+        )
       }
       if (seenWidths.has(rawWidth.name)) {
         return invalid(

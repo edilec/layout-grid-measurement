@@ -17,7 +17,7 @@
  */
 
 import { gridGeometry, geometryProblem } from './geometry.mjs'
-import { byCodeUnit, isRenderableString, num, sanitize } from './rules.mjs'
+import { MAX_ID_LENGTH, byCodeUnit, isRenderableString, num, sanitize } from './rules.mjs'
 
 export const CONTRACT_SCHEMA_VERSION = '1'
 
@@ -77,7 +77,9 @@ function requireFinite(value, label, { min = null, integer = false } = {}) {
 
 function requireName(value, label) {
   if (!isRenderableString(value)) {
-    throw new ContractError(`${label} must be a name that is visible once rendered`)
+    throw new ContractError(
+      `${label} must be a name at most ${MAX_ID_LENGTH} characters long that holds at least one visible character`,
+    )
   }
   return value
 }

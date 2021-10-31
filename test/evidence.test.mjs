@@ -9,12 +9,13 @@
  */
 
 import { strict as assert } from 'node:assert'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { EVIDENCE_MISSING_RULES, RULE_SEVERITY, statusFor } from '../src/index.mjs'
+import { EVIDENCE_MISSING_RULES, RULE_SEVERITY, findForbiddenClaim, statusFor } from '../src/index.mjs'
 import {
+  ROOT,
   box,
   contractDocument,
   measureFixture,
@@ -187,20 +188,64 @@ test('a document that is not valid JSON is reported without reproducing it', asy
   assert.ok(!report.findings[0].message.includes('AKIAIOSFODNN7EXAMPLE'), 'the document is never quoted back')
 })
 
-test('a structurally wrong document is reported as invalid rather than compared', async () => {
-  for (const [what, alter] of [
-    ['not an object', () => '"a string"'],
-    ['wrong schemaVersion', (document) => ({ ...document, schemaVersion: '9' })],
-    ['unknown key', (document) => ({ ...document, extra: 1 })],
-    ['routes not an array', (document) => ({ ...document, routes: {} })],
-    ['a repeated route', (document) => ({ ...document, routes: [document.routes[0], document.routes[0]] })],
-  ]) {
+/**
+ * Every branch of `readMeasurements` that refuses a document, with the field
+ * path it reports. The table is exhaustive on purpose, and the test below
+ * checks that it still is.
+ *
+ * The reason it is exhaustive: two of these branches used to abort the run with
+ * EMPTY stdout and exit 2 -- the shape the contract reserves for a
+ * configuration error -- because their own wording tripped the tool's
+ * forbidden-claim guard. The five-case version of this test drove neither.
+ */
+const MALFORMED_DOCUMENTS = Object.freeze([
+  ['not a JSON object', () => '"a string"', ''],
+  ['an unknown top-level key', (d) => ({ ...d, extra: 1 }), ''],
+  ['an unsupported schemaVersion', (d) => ({ ...d, schemaVersion: '9' }), '/schemaVersion'],
+  ['capture that is not an object', (d) => ({ ...d, capture: 'fixture' }), '/capture'],
+  ['an unknown key in capture', (d) => { d.capture.extra = 1; return d }, '/capture'],
+  ['a blank capture.id', (d) => { d.capture.id = ''; return d }, '/capture/id'],
+  ['a blank capture.unit', (d) => { d.capture.unit = ''; return d }, '/capture/unit'],
+  ['routes that are not an array', (d) => { d.routes = {}; return d }, '/routes'],
+  ['a route that is not an object', (d) => { d.routes[0] = 'dashboard'; return d }, '/routes/0'],
+  ['an unknown key in a route', (d) => { d.routes[0].extra = 1; return d }, '/routes/0'],
+  ['a route with a number for a name', (d) => { d.routes[0].name = 7; return d }, '/routes/0'],
+  ['the same route twice', (d) => { d.routes.push({ ...d.routes[0] }); return d }, '/routes/1'],
+  ['widths that are not an array', (d) => { d.routes[0].widths = {}; return d }, '/routes/0'],
+  ['a width that is not an object', (d) => { d.routes[0].widths[0] = 'wide'; return d }, '/routes/0/widths/0'],
+  ['an unknown key in a width', (d) => { d.routes[0].widths[0].extra = 1; return d }, '/routes/0/widths/0'],
+  ['a width that names nothing', (d) => { delete d.routes[0].widths[0].name; return d }, '/routes/0/widths/0'],
+  ['two sets of boxes for one width', (d) => { d.routes[0].widths[1].name = 'wide'; return d }, '/routes/0/widths/1'],
+  ['boxes that are not an array', (d) => { d.routes[0].widths[0].boxes = {}; return d }, '/routes/0/widths/0'],
+])
+
+test('every way a document can be structurally wrong produces a report, never empty stdout', async () => {
+  const messages = new Set()
+  for (const [what, alter, pointer] of MALFORMED_DOCUMENTS) {
     const result = await measureFixture(alter(measurementDocument()), contractDocument())
+    assert.notEqual(
+      result.stdout,
+      '',
+      `${what}: bad evidence must carry a report, not the empty stdout reserved for a configuration error`,
+    )
     const report = reportFrom(result)
     assert.equal(result.code, 2, what)
     assert.equal(report.status, 'incomplete', what)
     assert.deepEqual(ruleIds(report), ['measurements-invalid'], what)
+    assert.equal(report.findings[0].location.pointer, pointer, what)
+    assert.equal(findForbiddenClaim(report.findings[0].message), null, `${what}: ${report.findings[0].message}`)
+    messages.add(report.findings[0].message)
   }
+  assert.equal(messages.size, MALFORMED_DOCUMENTS.length, 'each row must reach a branch of its own')
+})
+
+test('the malformed-document table still covers every branch that refuses a document', async () => {
+  // A staleness guard on the table above, not a substitute for it: the test
+  // that matters drives all 18 rows through the CLI. This one fails when a
+  // branch is added and left undriven, which is how the last two got in.
+  const source = await readFile(join(ROOT, 'src', 'measurements.mjs'), 'utf8')
+  const branches = source.match(/return invalid\(/gu) ?? []
+  assert.equal(branches.length, MALFORMED_DOCUMENTS.length, 'a refusal branch has no row in MALFORMED_DOCUMENTS')
 })
 
 test('every warning-severity evidence rule depends on its membership of EVIDENCE_MISSING_RULES', () => {
