@@ -15,7 +15,7 @@
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
 
-import { describeValue, isRenderableString, makeFinding, msg, sanitize } from '../src/index.mjs'
+import { describeValue, isRenderableString, makeFinding, msg, renderReport, sanitize } from '../src/index.mjs'
 import { box, contractDocument, measureFixture, measurementDocument, reportFrom, withWideBoxes } from './helpers.mjs'
 
 const CLASSES = Object.freeze([
@@ -86,12 +86,77 @@ test('every control class is stripped when it arrives through an identifier', as
 })
 
 test('a separator is escaped in the rendered payload as well as stripped', async () => {
-  const measurements = measurementDocument((document) => {
-    document.capture.id = 'dashboard\u2028audit'
-    return document
-  })
-  const result = await measureFixture(measurements, contractDocument())
+  // This test used to set capture.id -- a field that never reaches the report --
+  // and assert that stdout held no raw separator, which was true whether or not
+  // renderReport escaped anything. Deleting the escaping left the suite green.
+  //
+  // Both halves of the name are checked now. Stripping: an element name is an
+  // identifier that does reach the report, and the separator must be gone from
+  // the string itself. Escaping: renderReport is exported, a consumer may hand
+  // it a report it assembled itself, and inside a JavaScript string literal
+  // U+2028 and U+2029 are line terminators -- so the payload must carry the
+  // escape text, losslessly.
+  const result = await measureFixture(
+    measurementDocument(withWideBoxes([box('summary\u2028card', 40, 100, 384, 200)])),
+    contractDocument(),
+  )
   assert.ok(!result.stdout.includes('\u2028'), 'stdout never carries a raw line separator')
+  assert.ok(
+    reportFrom(result).findings.some((finding) => /\bsummary card\b/u.test(finding.message)),
+    'the separator was stripped from the identifier, not passed on',
+  )
+
+  for (const [name, character, escape] of [
+    ['line separator', '\u2028', '\\u2028'],
+    ['paragraph separator', '\u2029', '\\u2029'],
+  ]) {
+    const assembled = {
+      schemaVersion: '1',
+      tool: 'layout-grid-measurement',
+      status: 'fail',
+      disclaimer: 'x',
+      summary: { checked: 1, errors: 1, warnings: 0, info: 0, routes: 1, widths: 1, boxes: 1 },
+      findings: [{
+        ruleId: 'element-misaligned-left',
+        severity: 'error',
+        message: `summary${character}card`,
+        location: { file: 'measurements.json', pointer: '/routes/dashboard' },
+      }],
+    }
+    const rendered = renderReport(assembled)
+    assert.ok(!rendered.includes(character), `${name} survived into the payload raw`)
+    assert.ok(rendered.includes(escape), `${name} is not escaped in the payload`)
+    assert.deepEqual(JSON.parse(rendered), assembled, `${name}: the escape must be lossless`)
+  }
+})
+
+test('a name holding ~ or / is escaped as a JSON Pointer rather than pasted into one', async () => {
+  // The README promises the pointer is a field path "with `~` and `/` inside a
+  // name escaped as JSON Pointer requires". The escaping worked and nothing
+  // defended it: removing both replaces left every test green, so a pointer that
+  // silently stopped being a valid JSON Pointer would have shipped.
+  const result = await measureFixture(
+    measurementDocument((document) => {
+      document.routes[0].name = 'a/b~c'
+      return document
+    }),
+    contractDocument((document) => {
+      document.elements = ['x/y~z', ...document.elements]
+      document.widths[0].spans = { 'x/y~z': { start: 1, end: 4 } }
+      document.widths[1].elements = ['x/y~z']
+      return document
+    }),
+  )
+  const report = reportFrom(result)
+  const finding = report.findings.find((entry) => entry.location.pointer.includes('~1y'))
+  assert.ok(finding !== undefined, `no pointer named the element: ${report.findings.map((f) => f.location.pointer)}`)
+  assert.equal(finding.location.pointer, '/routes/a~1b~0c/widths/mobile/boxes/x~1y~0z')
+
+  // RFC 6901 in reverse: ~1 back to /, then ~0 back to ~. Unescaping the
+  // pointer must give back the names the documents used, token for token.
+  const tokens = finding.location.pointer.split('/').slice(1)
+    .map((token) => token.replace(/~1/gu, '/').replace(/~0/gu, '~'))
+  assert.deepEqual(tokens, ['routes', 'a/b~c', 'widths', 'mobile', 'boxes', 'x/y~z'])
 })
 
 test('a value that cannot be converted to a primitive costs nothing', () => {

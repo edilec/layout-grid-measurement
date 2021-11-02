@@ -10,7 +10,17 @@
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
 
-import { ContractError, DEFAULT_LIMITS, LIMIT_NAMES, STACKINGS, validateContract } from '../src/index.mjs'
+import {
+  ContractError,
+  DEFAULT_LIMITS,
+  LIMIT_NAMES,
+  MAX_COLUMNS,
+  MAX_CONTRACT_BYTES,
+  MAX_ELEMENTS,
+  MAX_WIDTHS,
+  STACKINGS,
+  validateContract,
+} from '../src/index.mjs'
 import { contractDocument, measureFixture, measurementDocument, runCli, tempDir, writeJson } from './helpers.mjs'
 
 function refuses(alter, pattern) {
@@ -105,13 +115,68 @@ test('limits are validated and every documented limit name is accepted', () => {
   refuses((d) => { d.limits = { maxRoutes: 1.5 }; return d }, /maxRoutes must be a whole number/u)
 })
 
-test('the contract is bounded', () => {
+test('every bound on the contract itself bites at its documented value', async () => {
+  // MAX_WIDTHS and MAX_COLUMNS had a test. MAX_ELEMENTS and MAX_CONTRACT_BYTES
+  // did not, so raising either to an absurd value left the whole suite green and
+  // a bound the README promises could have vanished. Each bound is driven at N
+  // and at N + 1, because a bound asserted only from above is satisfied by a
+  // guard that refuses everything.
+  const elements = (count) => Array.from({ length: count }, (_, index) => `element-${index}`)
+
+  assert.equal(
+    validateContract(contractDocument((d) => {
+      d.elements = [...d.elements, ...elements(MAX_ELEMENTS - d.elements.length)]
+      return d
+    })).elements.size,
+    MAX_ELEMENTS,
+    'the documented number of elements is accepted',
+  )
   refuses((d) => {
-    d.widths = Array.from({ length: 33 }, (_, index) => ({ ...d.widths[1], name: `w${index}` }))
+    d.elements = [...d.elements, ...elements(MAX_ELEMENTS + 1 - d.elements.length)]
     return d
-  }, /over the bound of 32/u)
-  refuses((d) => { d.widths[0].grid.columns = 65; return d }, /over the bound of 64/u)
+  }, /elements names 513 elements, over the bound of 512/u)
+
+  assert.equal(
+    validateContract(contractDocument((d) => {
+      d.widths = Array.from({ length: MAX_WIDTHS }, (_, index) => ({ ...d.widths[1], name: `w${index}` }))
+      return d
+    })).widths.size,
+    MAX_WIDTHS,
+  )
+  refuses((d) => {
+    d.widths = Array.from({ length: MAX_WIDTHS + 1 }, (_, index) => ({ ...d.widths[1], name: `w${index}` }))
+    return d
+  }, /widths declares 33 widths, over the bound of 32/u)
+
+  assert.equal(
+    validateContract(contractDocument((d) => {
+      d.widths[0].grid = { columns: MAX_COLUMNS, gutter: 0, margin: 40 }
+      d.widths[0].spans = { 'summary-card': { start: 1, end: 1 }, 'alerts-card': { start: 2, end: 2 } }
+      return d
+    })).widths.get('wide').geometry.columns,
+    MAX_COLUMNS,
+  )
+  refuses((d) => { d.widths[0].grid.columns = MAX_COLUMNS + 1; return d }, /columns is 65, over the bound of 64/u)
+
   refuses((d) => { d.elements = []; return d }, /must be a non-empty array/u)
+
+  // The byte bound is enforced before the file is parsed, so the padding is
+  // whitespace: still valid JSON, and it is the size that decides.
+  const padded = (size) => {
+    const body = JSON.stringify(contractDocument())
+    return body + ' '.repeat(size - Buffer.byteLength(body))
+  }
+  const atLimit = await measureFixture(measurementDocument(), padded(MAX_CONTRACT_BYTES))
+  assert.equal(atLimit.code, 0, 'a contract of exactly the documented size is read')
+
+  const overLimit = await measureFixture(measurementDocument(), padded(MAX_CONTRACT_BYTES + 1))
+  assert.equal(overLimit.code, 2)
+  assert.equal(overLimit.stdout, '', 'a problem with the policy leaves stdout empty')
+  assert.match(
+    overLimit.stderr,
+    /Could not load the contract: 1000001 bytes exceeds the 1000000 byte limit/u,
+    'the message names the limit rather than failing later for another reason',
+  )
 })
 
 test('a name that renders as nothing is refused', () => {
