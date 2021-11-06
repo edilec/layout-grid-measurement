@@ -1,11 +1,21 @@
 /**
  * Severity, pinned behaviourally.
  *
- * A severity table asserted against a hand-written expected-value map is three
- * declarations agreeing with each other, and a coordinated edit of all three
- * passes. So every rule is driven through the real CLI with a real input and
- * the observable outcome is asserted -- the report status and the process exit
- * code. An exit code cannot be edited.
+ * Every rule is driven through the real CLI with a real input and the
+ * observable outcome is asserted: the severity the finding carries, the report
+ * status, and the process exit code.
+ *
+ * The expectations in `OUTCOME` below are LITERALS, and that is the whole
+ * point. This test used to read RULE_SEVERITY and EVIDENCE_MISSING_RULES to
+ * work out what to expect -- so it asked the source what the source should do,
+ * and a mutation sweep walked straight through it: flipping a severity in the
+ * code and in the README rule table together left all 121 tests green, with
+ * element-misaligned-right quietly demoted from exit 1 to exit 0. Deleting a
+ * rule from EVIDENCE_MISSING_RULES went the same way, turning exit 2 into
+ * exit 1.
+ *
+ * A literal exit code is not a declaration that can be edited into agreement
+ * with the others: changing it is deleting the test.
  *
  * Driving every rule also proves the catalog holds no rule the tool cannot
  * reach, which is how a documentation overclaim starts.
@@ -31,6 +41,42 @@ import {
 } from './helpers.mjs'
 
 const PAIR = [box('summary-card', 40, 100, 384, 200), box('alerts-card', 448, 100, 384, 200)]
+
+/**
+ * What each rule must actually do: the severity it carries, and the status --
+ * and therefore the exit code -- of a run in which it is the only thing found.
+ */
+const OUTCOME = Object.freeze({
+  'box-invalid':                      ['error', 'incomplete'],
+  'box-limit-exceeded':               ['error', 'incomplete'],
+  'duplicate-box':                    ['error', 'incomplete'],
+  'element-misaligned-left':          ['error', 'fail'],
+  'element-misaligned-right':         ['error', 'fail'],
+  'element-not-measured':             ['warning', 'incomplete'],
+  'element-overflows-content':        ['error', 'fail'],
+  'element-overflows-viewport':       ['error', 'fail'],
+  'element-unknown':                  ['info', 'pass'],
+  'elements-overlap':                 ['error', 'fail'],
+  'gutter-mismatch':                  ['error', 'fail'],
+  'measurements-age-unknown':         ['warning', 'incomplete'],
+  'measurements-invalid':             ['error', 'incomplete'],
+  'measurements-not-utf8':            ['error', 'incomplete'],
+  'measurements-stale':               ['warning', 'incomplete'],
+  'measurements-too-large':           ['error', 'incomplete'],
+  'measurements-unparsable':          ['error', 'incomplete'],
+  'measurements-unreadable':          ['error', 'incomplete'],
+  'no-boxes-checked':                 ['error', 'incomplete'],
+  'route-limit-exceeded':             ['error', 'incomplete'],
+  'stacked-element-not-full-width':   ['error', 'fail'],
+  'unit-unsupported':                 ['error', 'incomplete'],
+  'viewport-width-mismatch':          ['error', 'incomplete'],
+  'width-limit-exceeded':             ['error', 'incomplete'],
+  'width-not-measured':               ['warning', 'incomplete'],
+  'width-unknown':                    ['error', 'incomplete'],
+})
+
+/** The README's exit code table, as the process reports it. */
+const EXIT = Object.freeze({ pass: 0, fail: 1, incomplete: 2 })
 
 /** One reachable input per rule: [measurements, contract]. */
 const TRIGGERS = Object.freeze({
@@ -159,18 +205,17 @@ test('every rule in the catalog is reachable, and its severity decides the exit 
     const report = reportFrom(result)
     const finding = report.findings.find((entry) => entry.ruleId === ruleId)
     assert.ok(finding !== undefined, `${ruleId} was not reachable: got ${report.findings.map((f) => f.ruleId)}`)
-    assert.equal(finding.severity, RULE_SEVERITY[ruleId], `${ruleId} severity`)
 
-    if (EVIDENCE_MISSING.has(ruleId)) {
-      assert.equal(report.status, 'incomplete', `${ruleId} must mark the run incomplete`)
-      assert.equal(result.code, 2, `${ruleId} must exit 2`)
-    } else if (finding.severity === 'error') {
-      assert.equal(report.status, 'fail', `${ruleId} must fail the run`)
-      assert.equal(result.code, 1, `${ruleId} must exit 1`)
-    } else {
-      assert.equal(report.status, 'pass', `${ruleId} alone must not fail the run`)
-      assert.equal(result.code, 0, `${ruleId} must exit 0`)
-    }
+    const [severity, status] = OUTCOME[ruleId]
+    assert.equal(finding.severity, severity, `${ruleId} must carry severity ${severity}`)
+    assert.equal(RULE_SEVERITY[ruleId], severity, `${ruleId}: the table disagrees with what the run emitted`)
+    assert.equal(report.status, status, `${ruleId} alone must make the run ${status}`)
+    assert.equal(result.code, EXIT[status], `${ruleId} must exit ${EXIT[status]}`)
+    assert.equal(
+      EVIDENCE_MISSING.has(ruleId),
+      status === 'incomplete',
+      `${ruleId}: membership of EVIDENCE_MISSING_RULES is what decides between incomplete and the rest`,
+    )
   }
 })
 
@@ -178,6 +223,7 @@ test('the catalog and the table describe the same rules, in both directions', ()
   assert.deepEqual(RULE_IDS, [...RULE_IDS].sort(), 'the catalog is in code-unit order')
   assert.deepEqual(RULE_IDS, Object.keys(RULE_SEVERITY).sort(), 'no rule has a severity without being listed')
   assert.deepEqual([...Object.keys(TRIGGERS), ...FILE_LEVEL].sort(), [...RULE_IDS])
+  assert.deepEqual(Object.keys(OUTCOME).sort(), [...RULE_IDS], 'every rule states the outcome it must produce')
   for (const ruleId of EVIDENCE_MISSING_RULES) {
     assert.ok(RULE_IDS.includes(ruleId), `${ruleId} is evidence-missing but not a rule`)
   }
