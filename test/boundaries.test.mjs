@@ -9,7 +9,7 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { DEFAULT_LIMITS, LIMIT_NAMES, findForbiddenClaim, msg } from '../src/index.mjs'
+import { DEFAULT_LIMITS, LIMIT_NAMES, findForbiddenClaim, makeFinding, msg } from '../src/index.mjs'
 import {
   ROOT,
   box,
@@ -117,6 +117,40 @@ test('the only node builtins imported are the filesystem and paths', async () =>
       }
     }
   }
+})
+
+test('a path that is not a regular file is reported as one, not read', async () => {
+  // stat succeeds on a directory, so without this check readFile fails later
+  // with EISDIR and the report says "EISDIR" instead of naming the problem.
+  // Both exit 2, which is why removing the check was silent.
+  const dir = await tempDir()
+  const contractPath = await writeJson(dir, 'contract.json', contractDocument())
+  const measurements = await runCli(['--measurements', dir, '--contract', contractPath])
+  assert.equal(measurements.code, 2)
+  const report = reportFrom(measurements)
+  assert.deepEqual(ruleIds(report), ['measurements-unreadable'])
+  assert.match(report.findings[0].message, /The measurements were not read: not a regular file\./u)
+
+  const contract = await runCli(['--measurements', join(dir, 'contract.json'), '--contract', dir])
+  assert.equal(contract.code, 2)
+  assert.equal(contract.stdout, '', 'the contract is the policy, so this is a configuration error')
+  assert.match(contract.stderr, /Could not load the contract: not a regular file/u)
+})
+
+test('a finding message must be built by the tagged template, not handed in as a string', () => {
+  // The template is what checks the tool's own literals for claims it may not
+  // make. A finding assembled from a plain string would skip that check
+  // entirely, so makeFinding refuses one -- and every call site in src/ already
+  // uses the template, which is why removing the refusal changed no output.
+  assert.throws(
+    () => makeFinding('gutter-mismatch', 'the browser reported 24px', { file: 'measurements.json' }),
+    /must build its message with the msg tagged template/u,
+  )
+  assert.throws(
+    () => makeFinding('gutter-mismatch', { text: 'looks like a SafeMessage' }, { file: 'measurements.json' }),
+    /must build its message with the msg tagged template/u,
+  )
+  assert.equal(makeFinding('gutter-mismatch', msg`a real one`, { file: 'measurements.json' }).message, 'a real one')
 })
 
 test('a finding may not describe this tool as having observed a layout', () => {

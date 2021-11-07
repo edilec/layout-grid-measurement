@@ -179,6 +179,20 @@ test('every bound on the contract itself bites at its documented value', async (
   )
 })
 
+test('a part of the contract that is the wrong shape is refused by name', () => {
+  // Every one of these guards was removable in silence: deleting it reached a
+  // later guard that refused the same contract for a different reason, so the
+  // run still exited 2 with empty stdout and nothing compared the sentence.
+  refuses(() => 'a string', /The contract must be a JSON object/u)
+  refuses((d) => { d.widths[0] = 'wide'; return d }, /widths\[0\] must be an object/u)
+  refuses((d) => { delete d.widths[0].grid; return d }, /widths\[0\]\.grid must declare columns, gutter and margin/u)
+  refuses((d) => { d.widths[0].spans['summary-card'] = 5; return d }, /spans\.summary-card must declare start and end/u)
+  refuses((d) => { d.widths[0].spans = {}; return d }, /spans must declare at least one element/u)
+  refuses((d) => { d.widths = {}; return d }, /widths must be a non-empty array/u)
+  refuses((d) => { d.widths = []; return d }, /widths must be a non-empty array/u)
+  refuses((d) => { d.limits = []; return d }, /limits must be an object/u)
+})
+
 test('a name that renders as nothing is refused', () => {
   refuses((d) => { d.unit = '   '; return d }, /unit must be a name at most 128 characters long that holds at least one visible character/u)
   refuses((d) => { d.widths[0].name = ''; return d }, /name must be a name at most 128 characters long that holds at least one visible character/u)

@@ -56,11 +56,55 @@ test('a width name orders before an element name, because the pointer is compare
 test('the sort keys apply in order: file, then pointer, then rule, then message', () => {
   const finding = (file, pointer, ruleId, message) => ({ ruleId, severity: 'error', message, location: { file, pointer } })
 
-  assert.ok(compareFindings(finding('a.json', '/z', 'z-rule', 'z'), finding('b.json', '/a', 'a-rule', 'a')) < 0)
-  assert.ok(compareFindings(finding('a.json', '/a', 'z-rule', 'z'), finding('a.json', '/b', 'a-rule', 'a')) < 0)
-  assert.ok(compareFindings(finding('a.json', '/a', 'a-rule', 'z'), finding('a.json', '/a', 'b-rule', 'a')) < 0)
-  assert.ok(compareFindings(finding('a.json', '/a', 'a-rule', 'a'), finding('a.json', '/a', 'a-rule', 'b')) < 0)
+  // Every pair here is one collation and code-unit order disagree about -- `Z`
+  // before `a`, `a-b` before `a_b` -- so substituting a collator at any ONE of
+  // the four call sites flips that line. With `a.json`/`b.json` and
+  // `a-rule`/`b-rule` the two orders agreed, and three of the four keys could
+  // be collated without a test noticing.
+  assert.ok(compareFindings(finding('Z.json', '/z', 'z-rule', 'z'), finding('a.json', '/a', 'a-rule', 'a')) < 0)
+  assert.ok(compareFindings(finding('a.json', '/a-b', 'z-rule', 'z'), finding('a.json', '/a_b', 'a-rule', 'a')) < 0)
+  assert.ok(compareFindings(finding('a.json', '/a', 'Z-rule', 'z'), finding('a.json', '/a', 'a-rule', 'a')) < 0)
+  assert.ok(compareFindings(finding('a.json', '/a', 'a-rule', 'Z'), finding('a.json', '/a', 'a-rule', 'a')) < 0)
   assert.equal(compareFindings(finding('a.json', '/a', 'a-rule', 'a'), finding('a.json', '/a', 'a-rule', 'a')), 0)
+
+  const collator = new Intl.Collator('en')
+  for (const [left, right] of [['Z.json', 'a.json'], ['/a-b', '/a_b'], ['Z-rule', 'a-rule'], ['Z', 'a']]) {
+    assert.ok(collator.compare(left, right) > 0, `${left} vs ${right}: the fixture is only a test if the orders disagree`)
+  }
+})
+
+test('a list this tool prints as evidence is in code-unit order too', async () => {
+  // `declared widths:` and `expected here:` are sorted joins, and they are
+  // output rather than an intermediate order the final sort would overrule --
+  // so a collator at either call site would be visible to a consumer and
+  // nothing was asserting it.
+  const contract = contractDocument((document) => {
+    document.elements = ['Z-card', 'a-card', 'a_card', ...document.elements]
+    document.widths[0].spans = {
+      'Z-card': { start: 1, end: 4 },
+      'a-card': { start: 5, end: 8 },
+      'a_card': { start: 9, end: 12 },
+    }
+    document.widths[1].elements = ['Z-card']
+    return document
+  })
+  const measurements = measurementDocument((document) => {
+    document.routes[0].widths = [
+      { name: 'phone', viewportWidth: 375, boxes: [box('Z-card', 16, 100, 343, 200)] },
+      { name: 'wide', viewportWidth: 1280, boxes: [box('summary-card', 40, 100, 384, 200)] },
+    ]
+    return document
+  })
+  const report = reportFrom(await measureFixture(measurements, contract))
+
+  const widthEvidence = report.findings.find((entry) => entry.ruleId === 'width-unknown').evidence
+  assert.equal(widthEvidence, 'declared widths: mobile, wide')
+
+  const elementEvidence = report.findings.find((entry) => entry.ruleId === 'element-unknown').evidence
+  assert.equal(elementEvidence, 'expected here: Z-card, a-card, a_card')
+
+  const collated = ['a-card', 'Z-card', 'a_card'].sort((a, b) => new Intl.Collator('en').compare(a, b))
+  assert.notEqual(`expected here: ${collated.join(', ')}`, elementEvidence, 'the names must disagree under collation')
 })
 
 test('two findings on one element are ordered by their rule id', async () => {

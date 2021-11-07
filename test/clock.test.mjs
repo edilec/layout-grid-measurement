@@ -11,7 +11,7 @@
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
 
-import { compareLayout, readMeasurements, validateContract } from '../src/index.mjs'
+import { compareLayout, parseCaptureInstant, readMeasurements, validateContract } from '../src/index.mjs'
 import { contractDocument, measureFixture, measurementDocument, reportFrom, ruleIds } from './helpers.mjs'
 
 const DAY = 86400000
@@ -48,7 +48,17 @@ test('stale measurements are incomplete even when every box matches the contract
 })
 
 test('measurements whose age cannot be established are not assumed to be recent', () => {
-  for (const capturedAt of [undefined, 'yesterday', '2026-02-30', '2026-09-01T25:00:00Z', 20260901]) {
+  // The last four are the ones a sweep found unguarded. A minute or a second of
+  // 60 rolls forward into a valid instant, and the round-trip check only
+  // compares the year, month and day, so removing the range check turned
+  // 00:60:00 into 01:00:00 in silence. An array is worse: String(['2026-09-01'])
+  // is the date itself, so dropping the type check let a non-string smuggle a
+  // date past a check that exists to refuse one.
+  const unreadable = [
+    undefined, 'yesterday', '2026-02-30', '2026-09-01T25:00:00Z', 20260901,
+    '2026-09-01T00:60:00Z', '2026-09-01T00:00:60Z', '2026-13-01', ['2026-09-01'],
+  ]
+  for (const capturedAt of unreadable) {
     const report = compareAt(Date.UTC(2026, 8, 2), (document) => {
       if (capturedAt === undefined) delete document.capture.capturedAt
       else document.capture.capturedAt = capturedAt
@@ -56,6 +66,41 @@ test('measurements whose age cannot be established are not assumed to be recent'
     }, WITH_DEADLINE)
     assert.deepEqual(ruleIds(report), ['measurements-age-unknown'], String(capturedAt))
     assert.equal(report.status, 'incomplete', String(capturedAt))
+  }
+})
+
+test('parseCaptureInstant refuses every out-of-range field the two spellings admit', () => {
+  // Exhaustive over the domain the patterns accept: two digits each, so every
+  // month, day, hour, minute and second from 00 to 99. This is what proves the
+  // range checks and the round-trip check between them leave no gap -- and it
+  // is also the proof that the month and day range check is redundant with the
+  // round-trip, which is why removing that one line changes no output at all
+  // while removing the hour/minute/second line changes 149560 of these.
+  const pad = (value) => String(value).padStart(2, '0')
+
+  for (const year of [2024, 2026, 2100]) {
+    for (let month = 0; month < 100; month += 1) {
+      for (let day = 0; day < 100; day += 1) {
+        const text = `${year}-${pad(month)}-${pad(day)}`
+        const legal = month >= 1 && month <= 12 && day >= 1
+          && day <= new Date(Date.UTC(year, month, 0)).getUTCDate()
+        assert.equal(parseCaptureInstant(text).ok, legal, text)
+      }
+    }
+  }
+
+  for (let hour = 0; hour < 100; hour += 1) {
+    for (const minute of [0, 59, 60, 99]) {
+      for (const second of [0, 59, 60, 99]) {
+        const text = `2026-09-01T${pad(hour)}:${pad(minute)}:${pad(second)}Z`
+        const legal = hour <= 23 && minute <= 59 && second <= 59
+        assert.equal(parseCaptureInstant(text).ok, legal, text)
+      }
+    }
+  }
+
+  for (const notAString of [['2026-09-01'], 20260901, null, undefined, { toString: () => '2026-09-01' }]) {
+    assert.equal(parseCaptureInstant(notAString).ok, false, String(notAString))
   }
 })
 

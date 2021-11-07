@@ -78,6 +78,27 @@ test('elements in different rows are not compared with each other', () => {
     box('alerts-card', 448, 400, 384, 200),
   ]))
   assert.deepEqual(ids(report), [], 'a gutter is a within-row measurement')
+
+  // The case above passes whether or not the row test is applied, because two
+  // column-adjacent elements have a gap of exactly the gutter wherever they sit
+  // vertically. This one does not: the two elements occupy the SAME columns, one
+  // below the other, so dropping the row test reports them as overlapping
+  // horizontally -- which is what a two-row layout looks like from above.
+  const stackedInTheSameColumns = compare(
+    withWideBoxes([
+      box('summary-card', 40, 100, 384, 200),
+      box('alerts-card', 40, 400, 384, 200),
+    ]),
+    (contract) => {
+      contract.widths[0].spans['alerts-card'] = { start: 1, end: 4 }
+      return contract
+    },
+  )
+  assert.deepEqual(
+    ids(stackedInTheSameColumns),
+    [],
+    'two elements in the same columns and different rows do not overlap',
+  )
 })
 
 test('elements sitting on top of one another are reported on the axis they overlap', () => {

@@ -199,29 +199,29 @@ test('a document that is not valid JSON is reported without reproducing it', asy
  * forbidden-claim guard. The five-case version of this test drove neither.
  */
 const MALFORMED_DOCUMENTS = Object.freeze([
-  ['not a JSON object', () => '"a string"', ''],
-  ['an unknown top-level key', (d) => ({ ...d, extra: 1 }), ''],
-  ['an unsupported schemaVersion', (d) => ({ ...d, schemaVersion: '9' }), '/schemaVersion'],
-  ['capture that is not an object', (d) => ({ ...d, capture: 'fixture' }), '/capture'],
-  ['an unknown key in capture', (d) => { d.capture.extra = 1; return d }, '/capture'],
-  ['a blank capture.id', (d) => { d.capture.id = ''; return d }, '/capture/id'],
-  ['a blank capture.unit', (d) => { d.capture.unit = ''; return d }, '/capture/unit'],
-  ['routes that are not an array', (d) => { d.routes = {}; return d }, '/routes'],
-  ['a route that is not an object', (d) => { d.routes[0] = 'dashboard'; return d }, '/routes/0'],
-  ['an unknown key in a route', (d) => { d.routes[0].extra = 1; return d }, '/routes/0'],
-  ['a route with a number for a name', (d) => { d.routes[0].name = 7; return d }, '/routes/0'],
-  ['the same route twice', (d) => { d.routes.push({ ...d.routes[0] }); return d }, '/routes/1'],
-  ['widths that are not an array', (d) => { d.routes[0].widths = {}; return d }, '/routes/0'],
-  ['a width that is not an object', (d) => { d.routes[0].widths[0] = 'wide'; return d }, '/routes/0/widths/0'],
-  ['an unknown key in a width', (d) => { d.routes[0].widths[0].extra = 1; return d }, '/routes/0/widths/0'],
-  ['a width that names nothing', (d) => { delete d.routes[0].widths[0].name; return d }, '/routes/0/widths/0'],
-  ['two sets of boxes for one width', (d) => { d.routes[0].widths[1].name = 'wide'; return d }, '/routes/0/widths/1'],
-  ['boxes that are not an array', (d) => { d.routes[0].widths[0].boxes = {}; return d }, '/routes/0/widths/0'],
+  ['not a JSON object', () => '"a string"', '', 'The measurement document is not a JSON object.'],
+  ['an unknown top-level key', (d) => ({ ...d, extra: 1 }), '', 'the measurement document holds the unknown key "extra".'],
+  ['an unsupported schemaVersion', (d) => ({ ...d, schemaVersion: '9' }), '/schemaVersion', 'Unsupported measurement schemaVersion: 9.'],
+  ['capture that is not an object', (d) => ({ ...d, capture: 'fixture' }), '/capture', 'capture must be an object holding id and unit.'],
+  ['an unknown key in capture', (d) => { d.capture.extra = 1; return d }, '/capture', 'capture holds the unknown key "extra".'],
+  ['a blank capture.id', (d) => { d.capture.id = ''; return d }, '/capture/id', 'capture.id must be at most 128 characters long and hold at least one visible character.'],
+  ['a blank capture.unit', (d) => { d.capture.unit = ''; return d }, '/capture/unit', 'capture.unit must name the unit every coordinate is in.'],
+  ['routes that are not an array', (d) => { d.routes = {}; return d }, '/routes', 'routes must be an array.'],
+  ['a route that is not an object', (d) => { d.routes[0] = 'dashboard'; return d }, '/routes/0', 'A route must be an object.'],
+  ['an unknown key in a route', (d) => { d.routes[0].extra = 1; return d }, '/routes/0', 'a route holds the unknown key "extra".'],
+  ['a route with a number for a name', (d) => { d.routes[0].name = 7; return d }, '/routes/0', 'A route name must be at most 128 characters long and hold at least one visible character.'],
+  ['the same route twice', (d) => { d.routes.push({ ...d.routes[0] }); return d }, '/routes/1', 'Route dashboard appears more than once, so its coverage is ambiguous.'],
+  ['widths that are not an array', (d) => { d.routes[0].widths = {}; return d }, '/routes/0', 'Route dashboard: widths must be an array.'],
+  ['a width that is not an object', (d) => { d.routes[0].widths[0] = 'wide'; return d }, '/routes/0/widths/0', 'A width must be an object.'],
+  ['an unknown key in a width', (d) => { d.routes[0].widths[0].extra = 1; return d }, '/routes/0/widths/0', 'a width holds the unknown key "extra".'],
+  ['a width that names nothing', (d) => { delete d.routes[0].widths[0].name; return d }, '/routes/0/widths/0', 'A width name must be at most 128 characters long and hold at least one visible character.'],
+  ['two sets of boxes for one width', (d) => { d.routes[0].widths[1].name = 'wide'; return d }, '/routes/0/widths/1', 'Route dashboard holds two sets of boxes for width wide, so its coordinates are ambiguous.'],
+  ['boxes that are not an array', (d) => { d.routes[0].widths[0].boxes = {}; return d }, '/routes/0/widths/0', 'A width must hold an array of boxes.'],
 ])
 
 test('every way a document can be structurally wrong produces a report, never empty stdout', async () => {
   const messages = new Set()
-  for (const [what, alter, pointer] of MALFORMED_DOCUMENTS) {
+  for (const [what, alter, pointer, message] of MALFORMED_DOCUMENTS) {
     const result = await measureFixture(alter(measurementDocument()), contractDocument())
     assert.notEqual(
       result.stdout,
@@ -233,6 +233,11 @@ test('every way a document can be structurally wrong produces a report, never em
     assert.equal(report.status, 'incomplete', what)
     assert.deepEqual(ruleIds(report), ['measurements-invalid'], what)
     assert.equal(report.findings[0].location.pointer, pointer, what)
+    // The message matters as much as the rule id: several of these branches are
+    // reached by more than one route through readMeasurements, and a sweep that
+    // deleted one of them reached the next with a different sentence while the
+    // rule id and the pointer stayed the same.
+    assert.equal(report.findings[0].message, message, what)
     assert.equal(findForbiddenClaim(report.findings[0].message), null, `${what}: ${report.findings[0].message}`)
     messages.add(report.findings[0].message)
   }
@@ -246,6 +251,43 @@ test('the malformed-document table still covers every branch that refuses a docu
   const source = await readFile(join(ROOT, 'src', 'measurements.mjs'), 'utf8')
   const branches = source.match(/return invalid\(/gu) ?? []
   assert.equal(branches.length, MALFORMED_DOCUMENTS.length, 'a refusal branch has no row in MALFORMED_DOCUMENTS')
+})
+
+/**
+ * Every branch of `readBox` that refuses a record, and the sentence it reports.
+ */
+const MALFORMED_BOXES = Object.freeze([
+  ['not an object', () => 'summary-card', 'a box must be an object'],
+  ['an unknown key', (b) => ({ ...b, extra: 1 }), 'the box holds the unknown key "extra"'],
+  ['a blank element name', (b) => ({ ...b, element: '' }), 'element must be at most 128 characters long and hold at least one visible character'],
+  ['no x', (b) => { const { x, ...rest } = b; return rest }, 'x must be a finite number'],
+  ['a y that is a string', (b) => ({ ...b, y: '100' }), 'y must be a finite number'],
+  ['a negative width', (b) => ({ ...b, width: -1 }), 'width must be 0 or more'],
+  ['no height', (b) => { const { height, ...rest } = b; return rest }, 'height must be a finite number'],
+])
+
+test('every way a box can be wrong is reported, with the reason', async () => {
+  const reasons = new Set()
+  for (const [what, alter, reason] of MALFORMED_BOXES) {
+    const report = await expectIncomplete(
+      measurementDocument(withWideBoxes([alter(box('summary-card', 40, 100, 384, 200)), box('alerts-card', 448, 100, 384, 200)])),
+      contractDocument(),
+      'box-invalid',
+    )
+    const finding = report.findings.find((entry) => entry.ruleId === 'box-invalid')
+    assert.equal(finding.message, `A box was not compared: ${reason}.`, what)
+    reasons.add(finding.message)
+  }
+  assert.equal(reasons.size, MALFORMED_BOXES.length, 'each row must reach a branch of its own')
+})
+
+test('the malformed-box table still covers every branch that refuses a record', async () => {
+  // A staleness guard on the table above. `readBox` returns rather than throws,
+  // so the branches are counted by their return shape: six of them, one of which
+  // reports two different reasons (a missing coordinate and a negative size).
+  const source = await readFile(join(ROOT, 'src', 'measurements.mjs'), 'utf8')
+  const readBoxBody = source.slice(source.indexOf('export function readBox'), source.indexOf('export function pointerFor'))
+  assert.equal((readBoxBody.match(/ok: false/gu) ?? []).length, 5, 'a refusal branch has no row in MALFORMED_BOXES')
 })
 
 test('every warning-severity evidence rule depends on its membership of EVIDENCE_MISSING_RULES', () => {
