@@ -120,6 +120,45 @@ test('elements sitting on top of one another are reported on the axis they overl
   assert.equal(vertical.evidence, 'summary-card.bottom=300 alerts-card.top=280')
 })
 
+test('two elements at one coordinate are named in code-unit order, not collation order', () => {
+  // When two boxes share an x (at a grid width) or a y (at a stacked one), the
+  // tie-break decides which is "previous" and which is "current" -- and current
+  // owns the pointer and comes second in the sentence. Substituting a collator
+  // at either sort swapped both, and nothing noticed, because every other
+  // fixture in this file uses names the two orders agree about.
+  const withBothCards = (contract) => {
+    contract.elements = ['Z-card', 'a-card']
+    contract.widths[0].spans = { 'Z-card': { start: 1, end: 4 }, 'a-card': { start: 1, end: 4 } }
+    contract.widths[1].elements = ['Z-card', 'a-card']
+    return contract
+  }
+  const report = compare((document) => {
+    document.routes[0].widths[0].boxes = [
+      box('a-card', 40, 100, 384, 200),
+      box('Z-card', 40, 100, 384, 200),
+    ]
+    document.routes[0].widths[1].boxes = [
+      box('a-card', 16, 100, 343, 200),
+      box('Z-card', 16, 100, 343, 200),
+    ]
+    return document
+  }, withBothCards)
+
+  assert.deepEqual(ids(report), ['elements-overlap', 'elements-overlap'])
+  const horizontal = report.findings.find((finding) => finding.message.includes('horizontally'))
+  const vertical = report.findings.find((finding) => finding.message.includes('vertically'))
+
+  assert.equal(horizontal.location.pointer, '/routes/dashboard/widths/wide/boxes/a-card')
+  assert.match(horizontal.message, /^Z-card and a-card overlap horizontally/u)
+  assert.equal(vertical.location.pointer, '/routes/dashboard/widths/mobile/boxes/a-card')
+  assert.match(vertical.message, /^Z-card and a-card overlap vertically/u)
+
+  assert.ok(
+    new Intl.Collator('en').compare('Z-card', 'a-card') > 0,
+    'the fixture is only a test if collation puts them the other way round',
+  )
+})
+
 test('an element outside the margins is reported, and one off the viewport is reported as that', () => {
   const pastMargin = compare(withWideBoxes([
     box('summary-card', 40, 100, 384, 200),

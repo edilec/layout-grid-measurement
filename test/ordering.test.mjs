@@ -80,25 +80,30 @@ test('a list this tool prints as evidence is in code-unit order too', async () =
   // nothing was asserting it.
   const contract = contractDocument((document) => {
     document.elements = ['Z-card', 'a-card', 'a_card', ...document.elements]
+    document.widths[0].name = 'Z-wide'
     document.widths[0].spans = {
       'Z-card': { start: 1, end: 4 },
       'a-card': { start: 5, end: 8 },
       'a_card': { start: 9, end: 12 },
     }
+    document.widths[1].name = 'a-wide'
     document.widths[1].elements = ['Z-card']
+    document.widths.push({ ...document.widths[1], name: 'a_wide', viewportWidth: 320 })
     return document
   })
   const measurements = measurementDocument((document) => {
     document.routes[0].widths = [
       { name: 'phone', viewportWidth: 375, boxes: [box('Z-card', 16, 100, 343, 200)] },
-      { name: 'wide', viewportWidth: 1280, boxes: [box('summary-card', 40, 100, 384, 200)] },
+      { name: 'Z-wide', viewportWidth: 1280, boxes: [box('summary-card', 40, 100, 384, 200)] },
     ]
     return document
   })
   const report = reportFrom(await measureFixture(measurements, contract))
 
   const widthEvidence = report.findings.find((entry) => entry.ruleId === 'width-unknown').evidence
-  assert.equal(widthEvidence, 'declared widths: mobile, wide')
+  assert.equal(widthEvidence, 'declared widths: Z-wide, a-wide, a_wide')
+  const collatedWidths = ['a-wide', 'Z-wide', 'a_wide'].sort((a, b) => new Intl.Collator('en').compare(a, b))
+  assert.notEqual(`declared widths: ${collatedWidths.join(', ')}`, widthEvidence, 'the names must disagree under collation')
 
   const elementEvidence = report.findings.find((entry) => entry.ruleId === 'element-unknown').evidence
   assert.equal(elementEvidence, 'expected here: Z-card, a-card, a_card')
