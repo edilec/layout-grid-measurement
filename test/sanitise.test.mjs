@@ -213,13 +213,45 @@ test('an identifier that renders as nothing is refused rather than reported as e
 })
 
 test('evidence and suggestions are bounded and flattened too', () => {
+  // The name used to be half true: the body checked the evidence and never
+  // looked at a suggestion, and a suggestion was the one string that reached
+  // output without crossing the sanitiser. Both are checked here now, and
+  // makeFinding sanitises the suggestion, so the sentence is true rather than
+  // narrowed to what the body happened to do.
   const finding = makeFinding(
     'element-misaligned-left',
     msg`bounded`,
     { file: 'measurements.json' },
-    { evidence: `${'e'.repeat(400)}\u0085tail` },
+    { evidence: `${'e'.repeat(400)}\u0085tail`, suggestion: `${'s'.repeat(400)}\u0085tail` },
   )
   assert.ok(finding.evidence.length <= 200)
   assert.ok(finding.evidence.endsWith('...'))
   assert.ok(!finding.evidence.includes('\u0085'))
+
+  assert.ok(finding.suggestion.length <= 200)
+  assert.ok(finding.suggestion.endsWith('...'))
+  assert.ok(!finding.suggestion.includes('\u0085'))
+
+  const plain = makeFinding('element-misaligned-left', msg`bounded`, { file: 'measurements.json' })
+  assert.equal('suggestion' in plain, false, 'a finding built without one carries no suggestion key')
+})
+
+test('a finding carries into the report the suggestion it was built with', async () => {
+  // Nothing asserted this. Rewriting makeFinding so that no finding ever
+  // carried a suggestion left all 129 tests green, and every report lost a
+  // field the README documents -- along with the forbidden-claim check on the
+  // suggestion, which the only test that looked at one made vacuous by reading
+  // `finding.suggestion ?? ''`.
+  const report = reportFrom(await measureFixture(
+    measurementDocument(withWideBoxes([box('summary-card', 40, 100, 384, 200)])),
+    contractDocument(),
+  ))
+  const finding = report.findings.find((entry) => entry.ruleId === 'element-not-measured')
+  assert.equal(finding.suggestion, 'Record a box for every element the contract expects at this width.')
+
+  assert.throws(
+    () => makeFinding('element-misaligned-left', msg`x`, { file: 'm.json' }, { suggestion: 'Check how it rendered' }),
+    /A finding suggestion may not claim this tool observed an interface/u,
+    'the suggestion is checked for the claims this tool may not make',
+  )
 })

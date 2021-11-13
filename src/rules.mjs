@@ -327,7 +327,13 @@ export function makeFinding(ruleId, message, location, extra = {}) {
   if (extra.evidence !== undefined) finding.evidence = sanitize(extra.evidence)
   if (extra.suggestion !== undefined) {
     assertNoForbiddenClaim(extra.suggestion, 'A finding suggestion')
-    finding.suggestion = extra.suggestion
+    // The suggestion crosses the same boundary as everything else that reaches
+    // output. Every call site builds it from this tool's own literals today, so
+    // sanitising changes no byte of any current report -- which is exactly why
+    // it was the one string that skipped the boundary, and exactly the shape of
+    // an invariant that is true only by accident. JSON.stringify escapes a
+    // newline but not U+0085 or a bidi override.
+    finding.suggestion = sanitize(extra.suggestion)
   }
   return finding
 }
