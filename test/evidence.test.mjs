@@ -106,6 +106,40 @@ test('a width recorded at another viewport is not compared against this grid', a
   assert.match(finding.message, /none of its 2 box\(es\) were compared/u)
 })
 
+test('a stacked width says so in its evidence rather than describing a grid', async () => {
+  // The evidence for viewport-width-mismatch comes from describeWidth, which
+  // has a branch per stacking -- and every fixture that reached it used the
+  // grid width, so the stacked branch was removable in silence. Without it a
+  // stacked width is described as "1 columns of 343 with a gutter of 0", which
+  // is a grid the contract explicitly says does not apply there: a claim about
+  // the contract that the contract does not make.
+  const grid = await expectIncomplete(
+    measurementDocument((document) => {
+      document.routes[0].widths[0].viewportWidth = 1440
+      return document
+    }),
+    contractDocument(),
+    'viewport-width-mismatch',
+  )
+  assert.equal(
+    grid.findings.find((entry) => entry.ruleId === 'viewport-width-mismatch').evidence,
+    '12 columns of 78 with a gutter of 24 at 1280',
+  )
+
+  const stacked = await expectIncomplete(
+    measurementDocument((document) => {
+      document.routes[0].widths[1].viewportWidth = 414
+      return document
+    }),
+    contractDocument(),
+    'viewport-width-mismatch',
+  )
+  assert.equal(
+    stacked.findings.find((entry) => entry.ruleId === 'viewport-width-mismatch').evidence,
+    'stacked content 16..359 at 375',
+  )
+})
+
 test('a width with no viewport recorded at all is refused rather than assumed', async () => {
   await expectIncomplete(
     measurementDocument((document) => {
