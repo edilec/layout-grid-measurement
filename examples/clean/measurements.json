@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "1",
+  "capture": { "id": "console-dashboard", "unit": "px", "capturedAt": "2026-09-01" },
+  "routes": [
+    {
+      "name": "dashboard",
+      "widths": [
+        {
+          "name": "wide",
+          "viewportWidth": 1280,
+          "boxes": [
+            { "element": "page-title", "x": 40, "y": 64, "width": 1200, "height": 48 },
+            { "element": "summary-card", "x": 40, "y": 144, "width": 384, "height": 220 },
+            { "element": "activity-card", "x": 448, "y": 144, "width": 384, "height": 220 },
+            { "element": "alerts-card", "x": 856, "y": 144, "width": 384, "height": 220 }
+          ]
+        },
+        {
+          "name": "mobile",
+          "viewportWidth": 375,
+          "boxes": [
+            { "element": "page-title", "x": 16, "y": 56, "width": 343, "height": 40 },
+            { "element": "summary-card", "x": 16, "y": 112, "width": 343, "height": 200 },
+            { "element": "activity-card", "x": 16, "y": 328, "width": 343, "height": 200 },
+            { "element": "alerts-card", "x": 16, "y": 544, "width": 343, "height": 200 }
+          ]
+        }
+      ]
+    }
+  ]
+}

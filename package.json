@@ -1,0 +1,53 @@
+{
+  "name": "layout-grid-measurement",
+  "version": "0.1.0",
+  "description": "Compare columns, gutters, alignment and overflow in a supplied document of bounding boxes with a layout contract that documents each width's grid and stacking.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "node --check src/rules.mjs && node --check src/geometry.mjs && node --check src/contract.mjs && node --check src/measurements.mjs && node --check src/checks.mjs && node --check src/index.mjs && node --check bin/layout-grid-measurement.mjs && node --check test/helpers.mjs && node --check test/acceptance.test.mjs && node --check test/alignment.test.mjs && node --check test/boundaries.test.mjs && node --check test/catalog.test.mjs && node --check test/clock.test.mjs && node --check test/cli.test.mjs && node --check test/contract.test.mjs && node --check test/evidence.test.mjs && node --check test/geometry.test.mjs && node --check test/ordering.test.mjs && node --check test/parse.test.mjs && node --check test/sanitise.test.mjs && node --check test/severity.test.mjs",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/**",
+    "example": "node bin/layout-grid-measurement.mjs --measurements examples/clean/measurements.json --contract examples/clean/layout.contract.json --now 2026-09-18",
+    "example:broken": "node bin/layout-grid-measurement.mjs --measurements examples/broken/measurements.json --contract examples/broken/layout.contract.json --now 2026-09-18",
+    "pack:check": "npm pack --dry-run",
+    "check": "npm run lint && npm test && npm run example && npm run pack:check"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/edilec/layout-grid-measurement.git"
+  },
+  "bin": {
+    "layout-grid-measurement": "./bin/layout-grid-measurement.mjs"
+  },
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "examples",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "layout",
+    "grid",
+    "columns",
+    "gutters",
+    "alignment",
+    "responsive",
+    "measurements",
+    "cli"
+  ],
+  "author": "Edilec Private Limited",
+  "bugs": {
+    "url": "https://github.com/edilec/layout-grid-measurement/issues"
+  },
+  "homepage": "https://github.com/edilec/layout-grid-measurement#readme"
+}
